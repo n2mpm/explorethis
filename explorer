@@ -1,0 +1,1823 @@
+[quote]
+[color=#7E7E7E]//************************************************************************[/color]
+[color=#7E7E7E]//*	Arduino Explorer[/color]
+[color=#7E7E7E]//*		(C) 2010 by Mark Sproul[/color]
+[color=#7E7E7E]//*		Open source as per standard Arduino code[/color]
+[color=#7E7E7E]//*[/color]
+[color=#7E7E7E]//*	This is done in the old fashion monitor style low level program[/color]
+[color=#7E7E7E]//*	it allows you to look at various aspects of the Arduino environment[/color]
+[color=#7E7E7E]//*	without writting special code. It can be used for debugging new hardware[/color]
+[color=#7E7E7E]//*[/color]
+[color=#7E7E7E]//*		0	=	Zero address counters[/color]
+[color=#7E7E7E]//*		?	=	Help[/color]
+[color=#7E7E7E]//*		B	=	Blink LED[/color]
+[color=#7E7E7E]//*		E	=	Dump EEPROM[/color]
+[color=#7E7E7E]//*		F	=	Dump FLASH[/color]
+[color=#7E7E7E]//*		I	=	I2C scan[/color]
+[color=#7E7E7E]//*		M	=	Map I/O pins[/color]
+[color=#7E7E7E]//*		P	=	Show ONE pin[/color]
+[color=#7E7E7E]//*		R	=	Dump RAM[/color]
+[color=#7E7E7E]//*		S	=	Show pins[/color]
+[color=#7E7E7E]//*		T	=	Play Tone[/color]
+[color=#7E7E7E]//*		V	=	Show interrupt vectors[/color]
+[color=#7E7E7E]//*		W	=	Watch for input change[/color]
+[color=#7E7E7E]//*		X	=	Port ouput, blink all 8 bits in a port by port letter[/color]
+[color=#7E7E7E]//*[/color]
+[color=#7E7E7E]//*	This has been tested on the following Arduino boards[/color]
+[color=#7E7E7E]//*		Arduino Duemilanove		__AVR_ATmega328P__[/color]
+[color=#7E7E7E]//*		Arduino LilyPad 		__AVR_ATmega328P__[/color]
+[color=#7E7E7E]//*		Arduino Mega			__AVR_ATmega1280__[/color]
+[color=#7E7E7E]//*		Liquidware Illuminato	__AVR_ATmega645__[/color]
+[color=#7E7E7E]//*		Duino644				__AVR_ATmega644__[/color]
+[color=#7E7E7E]//*		Sanguino				__AVR_ATmega644P__[/color]
+[color=#7E7E7E]//*		Teensy 2				__AVR_ATmega32U4__[/color]
+[color=#7E7E7E]//*		Teensy++ 2				__AVR_AT90USB1286__[/color]
+[color=#7E7E7E]//************************************************************************[/color]
+[color=#7E7E7E]//*	Mar 13,	2010	<MLS> Started on Arduino Explorer[/color]
+[color=#7E7E7E]//*	Mar 16,	2010	<MLS> Added map port command[/color]
+[color=#7E7E7E]//*	Mar 21,	2010	<MLS> Added Port output (blink entire port)[/color]
+[color=#7E7E7E]//*	Mar 22,	2010	<MLS> Added VECTOR command[/color]
+[color=#7E7E7E]//*	Mar 25,	2010	<MLS> Added memory map function (with help from John O)[/color]
+[color=#7E7E7E]//*	Mar 29,	2010	<MLS> Received the Teensy 2.0 and Teensy++ 2.0[/color]
+[color=#7E7E7E]//*	Mar 29,	2010	<MLS> Had to write my own pin# -> Port table[/color]
+[color=#7E7E7E]//*	Apr  2,	2010	<MLS> tested on LilyPad[/color]
+[color=#7E7E7E]//************************************************************************[/color]
+
+#ifdef __MWERKS__
+	#include	[color=#006699]"codewarrior.h"[/color]
+	#include	<stdlib.h>
+[color=#7E7E7E]//	#define _LIQUIDWARE_TOUCH_SLIDE_[/color]
+#else
+	#include	<avr/pgmspace.h>
+	#include	[color=#006699]"EEPROM.h"[/color]
+#endif
+
+#include	<ctype.h>
+#include	<avr/[color=#CC6600]version[/color].h>
+#include	<avr/io.h>
+
+
+
+#include	[color=#006699]"Arduino.h"[/color]
+#include	[color=#006699]"HardwareSerial.h"[/color]
+#include	[color=#006699]"pins_arduino.h"[/color]
+[color=#7E7E7E]//#include	"ToneNotes.h"[/color]
+
+#include [color=#006699]"Wire.h"[/color]
+extern [color=#006699]"C"[/color] { 
+	#include [color=#006699]"utility/twi.h"[/color]	[color=#7E7E7E]// from Wire library, so we can do bus scanning[/color]
+	[color=#7E7E7E]//#include "twi.h"			// from Wire library, so we can do bus scanning[/color]
+}
+
+
+
+
+enum 
+{
+	kDUMP_FLASH	=	0,
+	kDUMP_EEPROM,
+	kDUMP_RAM
+};
+
+[color=#CC6600]unsigned[/color] [color=#CC6600]char[/color]	*gRamPtr	=	0;
+[color=#CC6600]unsigned[/color] [color=#CC6600]int[/color]	gRamIndex	=	0;
+[color=#CC6600]unsigned[/color] [color=#CC6600]long[/color]	gFlashIndex	=	0;
+
+
+[color=#7E7E7E]//************************************************************************[/color]
+#if defined(_BOARD_LIQUIDWARE_TOUCH_SLIDE_) || defined(_LIQUIDWARE_TOUCH_SLIDE_)
+	#define	kCPU_NAME	[color=#006699]"ATmega2560 (Liquidware touchslide)"[/color]
+
+	#define	kRXD_pin				0
+	#define	kTXD_pin				1
+
+	#define	kLED_PIN	13
+	#define	kLED_pin_First			13
+	#define	kLED_pin_Last			15
+
+
+	#define	kDigitalPin_First		0
+	#define	kDigitalPin_Count		16
+
+[color=#7E7E7E]//	#define	kDigitalPin_FirstAnalog	9[/color]
+[color=#7E7E7E]//	#define	kAnalogPin_Count		0[/color]
+
+[color=#7E7E7E]//	#define	kAnalogPin_Last			9[/color]
+
+
+
+[color=#7E7E7E]//************************************************************************[/color]
+#elif defined(__AVR_ATmega1280__)
+	#define	kCPU_NAME	[color=#006699]"ATmega1280 (Mega)"[/color]
+
+	#define	kRXD_pin				0
+	#define	kTXD_pin				1
+	
+
+	#define	kLED_PIN				13
+
+	#define	kDigitalPin_First		0
+	#define	kDigitalPin_Count		70
+
+	#define	kDigitalPin_FirstAnalog	54
+
+	#define	kAnalogPin_Count		16
+
+	[color=#7E7E7E]//*	Liquidware Button pad only works on the Mega[/color]
+	#include [color=#006699]"ButtonPad.h"[/color]
+	ButtonPad	CButtonPad	=	ButtonPad();
+
+[color=#7E7E7E]//************************************************************************[/color]
+#elif defined(_BOARD_LIQUIDWARE_ILLUMINATO_ ) || defined(__AVR_ATmega645__ )
+
+	#define	kCPU_NAME	[color=#006699]"ATmega645 (illuminato)"[/color]
+	
+	#define	kRXD_pin				0
+	#define	kTXD_pin				1
+
+[color=#7E7E7E]//	#define	kLED_PIN				13[/color]
+	#define	kLED_PIN				42
+
+	#define	kDigitalPin_First		0
+	#define	kDigitalPin_Count		43
+
+	#define	kDigitalPin_FirstAnalog	36
+
+	#define	kAnalogPin_Count		6
+
+
+[color=#7E7E7E]//************************************************************************[/color]
+#elif defined(_BOARD_DUINO644_ )
+
+		#define SPEAKER_PIN1      22  [color=#7E7E7E]// PC6;[/color]
+		#define SPEAKER_PIN2      23  [color=#7E7E7E]// PC7;[/color]
+	#ifdef __AVR_ATmega644__
+		#define	kCPU_NAME			[color=#006699]"ATmega644 (Duino644)"[/color]
+	#endif
+	#ifdef __AVR_ATmega644P__
+		#define	kCPU_NAME			[color=#006699]"ATmega644P (Duino644)"[/color]
+	#endif
+	
+	#define	kRXD_pin				8
+	#define	kTXD_pin				9
+
+	#define	kDigitalPin_First		0
+	#define	kDigitalPin_Count		32
+
+	#define	kDigitalPin_FirstAnalog	24
+
+	#define	kAnalogPin_Count		8
+
+
+	#define _SUPPORT_RTC_
+
+[color=#7E7E7E]//************************************************************************[/color]
+#elif defined(__AVR_ATmega644__ ) || defined(__AVR_ATmega644P__ )
+
+		#define SPEAKER_PIN1      22  [color=#7E7E7E]// PC6;[/color]
+		#define SPEAKER_PIN2      23  [color=#7E7E7E]// PC7;[/color]
+	#ifdef __AVR_ATmega644__
+		#define	kCPU_NAME			[color=#006699]"ATmega644 (Sanguino)"[/color]
+	#endif
+	#ifdef __AVR_ATmega644P__
+		#define	kCPU_NAME			[color=#006699]"ATmega644P (Sanguino)"[/color]
+		#define	kLED_PIN			0
+	#endif
+	
+	#define	kRXD_pin				8
+	#define	kTXD_pin				9
+
+	#define	kDigitalPin_First		0
+	#define	kDigitalPin_Count		32
+
+	#define	kDigitalPin_FirstAnalog	24
+
+	#define	kAnalogPin_Count		8
+
+
+
+[color=#7E7E7E]//************************************************************************[/color]
+#elif defined(__AVR_ATmega32U4__)
+	#define	kCPU_NAME				[color=#006699]"ATmega32U4 (Teensy 2.0)"[/color]
+	#define	kRXD_pin				7
+	#define	kTXD_pin				8
+
+	#define	kLED_PIN				11
+
+
+	#define	kDigitalPin_First		0
+	[color=#7E7E7E]//*	total pins, digital and analog[/color]
+	#define	kDigitalPin_Count		25
+
+	#define	kDigitalPin_FirstAnalog	25
+	#define	kAnalogPin_Count		12
+
+[color=#7E7E7E]//*	the TEENSY arduino does the pin mapping macros differently[/color]
+[color=#7E7E7E]//*	http://www.pjrc.com/teensy/pinout.html[/color]
+prog_char	gPinToPortNameTable[]	PROGMEM	=	
+{
+	[color=#006699]'B'[/color],	[color=#7E7E7E]//	0	PB0[/color]
+	[color=#006699]'B'[/color],	[color=#7E7E7E]//	1	PB1[/color]
+	[color=#006699]'B'[/color],	[color=#7E7E7E]//	2	PB2[/color]
+	[color=#006699]'B'[/color],	[color=#7E7E7E]//	3	PB3[/color]
+	[color=#006699]'B'[/color],	[color=#7E7E7E]//	4	PB7[/color]
+	[color=#006699]'D'[/color],	[color=#7E7E7E]//	5	PD0[/color]
+	[color=#006699]'D'[/color],	[color=#7E7E7E]//	6	PD1[/color]
+	[color=#006699]'D'[/color],	[color=#7E7E7E]//	7	PD2[/color]
+	[color=#006699]'D'[/color],	[color=#7E7E7E]//	8	PD3[/color]
+	[color=#006699]'C'[/color],	[color=#7E7E7E]//	9	PC6[/color]
+	[color=#006699]'C'[/color],	[color=#7E7E7E]//	10	PC7[/color]
+	[color=#006699]'D'[/color],	[color=#7E7E7E]//	11	PD6	A10[/color]
+	[color=#006699]'D'[/color],	[color=#7E7E7E]//	12	PD7	A9[/color]
+	[color=#006699]'B'[/color],	[color=#7E7E7E]//	13	PB4	A8[/color]
+	[color=#006699]'B'[/color],	[color=#7E7E7E]//	14	PB5	A7[/color]
+	[color=#006699]'B'[/color],	[color=#7E7E7E]//	15	PB6	A6[/color]
+	[color=#006699]'F'[/color],	[color=#7E7E7E]//	16	PF7	A5[/color]
+	[color=#006699]'F'[/color],	[color=#7E7E7E]//	17	PF6 A4[/color]
+	[color=#006699]'F'[/color],	[color=#7E7E7E]//	18	PF5 A3[/color]
+	[color=#006699]'F'[/color],	[color=#7E7E7E]//	19	PF4 A2[/color]
+	[color=#006699]'F'[/color],	[color=#7E7E7E]//	20	PF1 A1[/color]
+	[color=#006699]'F'[/color],	[color=#7E7E7E]//	21	PF0 A0[/color]
+	[color=#006699]'D'[/color],	[color=#7E7E7E]//	22	PD4	A11[/color]
+	[color=#006699]'D'[/color],	[color=#7E7E7E]//	23	PD5[/color]
+	[color=#006699]'E'[/color],	[color=#7E7E7E]//	24	PE6[/color]
+};
+
+
+[color=#7E7E7E]//************************************************************************[/color]
+#elif defined(__AVR_AT90USB1286__)
+	#define	kCPU_NAME	[color=#006699]"AT90USB1286 (Teensy++ 2.0)"[/color]
+	#define	kRXD_pin	2
+	#define	kTXD_pin	3
+
+	#define	kLED_PIN	6
+
+
+	#define	kDigitalPin_First		0
+	#define	kDigitalPin_Count		46
+
+
+
+	#define	kDigitalPin_FirstAnalog	38
+	#define	kAnalogPin_Count		8
+
+[color=#7E7E7E]//*	the TEENSY arduino does the pin mapping macros differently[/color]
+[color=#7E7E7E]//*	http://www.pjrc.com/teensy/pinout.html[/color]
+prog_char	gPinToPortNameTable[]	PROGMEM	=	
+{
+	[color=#006699]'D'[/color],	[color=#7E7E7E]//	0[/color]
+	[color=#006699]'D'[/color],	[color=#7E7E7E]//	1[/color]
+	[color=#006699]'D'[/color],	[color=#7E7E7E]//	2[/color]
+	[color=#006699]'D'[/color],	[color=#7E7E7E]//	3[/color]
+	[color=#006699]'D'[/color],	[color=#7E7E7E]//	4[/color]
+	[color=#006699]'D'[/color],	[color=#7E7E7E]//	5[/color]
+	[color=#006699]'D'[/color],	[color=#7E7E7E]//	6[/color]
+	[color=#006699]'D'[/color],	[color=#7E7E7E]//	7[/color]
+	[color=#006699]'E'[/color],	[color=#7E7E7E]//	8[/color]
+	[color=#006699]'E'[/color],	[color=#7E7E7E]//	9[/color]
+	[color=#006699]'C'[/color],	[color=#7E7E7E]//	10[/color]
+	[color=#006699]'C'[/color],	[color=#7E7E7E]//	11[/color]
+	[color=#006699]'C'[/color],	[color=#7E7E7E]//	12[/color]
+	[color=#006699]'C'[/color],	[color=#7E7E7E]//	13[/color]
+	[color=#006699]'C'[/color],	[color=#7E7E7E]//	14[/color]
+	[color=#006699]'C'[/color],	[color=#7E7E7E]//	15[/color]
+	[color=#006699]'C'[/color],	[color=#7E7E7E]//	16[/color]
+	[color=#006699]'C'[/color],	[color=#7E7E7E]//	17[/color]
+	[color=#006699]'E'[/color],	[color=#7E7E7E]//	18[/color]
+	[color=#006699]'E'[/color],	[color=#7E7E7E]//	19[/color]
+	[color=#006699]'B'[/color],	[color=#7E7E7E]//	20[/color]
+	[color=#006699]'B'[/color],	[color=#7E7E7E]//	21[/color]
+	[color=#006699]'B'[/color],	[color=#7E7E7E]//	22[/color]
+	[color=#006699]'B'[/color],	[color=#7E7E7E]//	23[/color]
+	[color=#006699]'B'[/color],	[color=#7E7E7E]//	24[/color]
+	[color=#006699]'B'[/color],	[color=#7E7E7E]//	25[/color]
+	[color=#006699]'B'[/color],	[color=#7E7E7E]//	26[/color]
+	[color=#006699]'B'[/color],	[color=#7E7E7E]//	27[/color]
+	[color=#006699]'A'[/color],	[color=#7E7E7E]//	28[/color]
+	[color=#006699]'A'[/color],	[color=#7E7E7E]//	29[/color]
+	[color=#006699]'A'[/color],	[color=#7E7E7E]//	30[/color]
+	[color=#006699]'A'[/color],	[color=#7E7E7E]//	31[/color]
+	[color=#006699]'A'[/color],	[color=#7E7E7E]//	32[/color]
+	[color=#006699]'A'[/color],	[color=#7E7E7E]//	33[/color]
+	[color=#006699]'A'[/color],	[color=#7E7E7E]//	34[/color]
+	[color=#006699]'A'[/color],	[color=#7E7E7E]//	35[/color]
+	[color=#006699]'E'[/color],	[color=#7E7E7E]//	36[/color]
+	[color=#006699]'E'[/color],	[color=#7E7E7E]//	37[/color]
+	[color=#006699]'F'[/color],	[color=#7E7E7E]//	38	analog[/color]
+	[color=#006699]'F'[/color],	[color=#7E7E7E]//	39	analog[/color]
+	[color=#006699]'F'[/color],	[color=#7E7E7E]//	40	analog[/color]
+	[color=#006699]'F'[/color],	[color=#7E7E7E]//	41	analog[/color]
+	[color=#006699]'F'[/color],	[color=#7E7E7E]//	42	analog[/color]
+	[color=#006699]'F'[/color],	[color=#7E7E7E]//	43	analog[/color]
+	[color=#006699]'F'[/color],	[color=#7E7E7E]//	44	analog[/color]
+	[color=#006699]'F'[/color],	[color=#7E7E7E]//	45	analog[/color]
+};
+
+
+[color=#7E7E7E]//************************************************************************[/color]
+#else
+
+	#define	kRXD_pin	0
+	#define	kTXD_pin	1
+
+	#define	kLED_PIN	13
+
+	#define	kDigitalPin_First		0
+	#define	kDigitalPin_Count		20
+
+	#define	kDigitalPin_FirstAnalog	14
+
+	#define	kAnalogPin_Count		6
+
+
+#endif
+
+#if defined(__AVR_ATmega1280__)
+	#define	SERIAL_PORT_COUNT		4
+#elif defined(__AVR_ATmega644P__)
+	#define	SERIAL_PORT_COUNT		2
+#else
+	#define	SERIAL_PORT_COUNT		1
+#endif
+
+
+[color=#7E7E7E]//************************************************************************[/color]
+
+#if !defined(RAMSTART)
+	#define RAMSTART     (0x100)
+#endif
+
+#ifdef __AVR_ATmega168__ 
+	#define	kCPU_NAME	[color=#006699]"ATmega168"[/color]
+#endif
+
+#ifdef __AVR_ATmega328P__
+	#define	kCPU_NAME	[color=#006699]"ATmega328P"[/color]
+#endif
+
+
+
+#ifdef _VECTORS_SIZE
+	#define	kInterruptVectorCount (_VECTORS_SIZE/4)
+#else
+	#define	kInterruptVectorCount 23
+#endif
+
+
+
+
+
+[color=#7E7E7E]//************************************************************************[/color]
+#if (defined(__AVR_ATmega168__))
+	[color=#7E7E7E]//*	the 168 does not have enough memory for the interrupt names[/color]
+	[color=#7E7E7E]//*	the 168 does not have enough memory to support the SD card library[/color]
+#else
+	#include	[color=#006699]"avrintrruptnames.h"[/color]
+[color=#7E7E7E]//	#define _SUPPORT_SD_CARD_[/color]
+#endif
+
+[color=#7E7E7E]//************************************************************************[/color]
+#ifdef _SUPPORT_SD_CARD_
+	#include [color=#006699]"SDuFAT.h"[/color]
+#endif
+
+#ifdef _SUPPORT_RTC_
+	#include [color=#006699]"DS1307.h"[/color]
+	[color=#CC6600]void[/color] GetTimeFromRTC();
+
+	[color=#7E7E7E]// globals; set in GetTimeFromRTC();[/color]
+	[color=#7E7E7E]//*	<MLS> Changed GLOBALS to g<parm> because of confusision of similar variable names inside of routines[/color]
+	[color=#CC6600]int[/color]		gHour;
+	[color=#CC6600]int[/color]		gMinute;
+	[color=#CC6600]int[/color]		gYear;
+	[color=#CC6600]int[/color]		gMonth;
+	[color=#CC6600]int[/color]		gDay;
+	[color=#CC6600]int[/color]		gDow;
+#endif
+
+[color=#7E7E7E]//************************************************************************[/color]
+[color=#7E7E7E]//*	in an attempt to save RAM and use program space more effiently, printed strings are here[/color]
+#ifdef kCPU_NAME
+prog_char	gTextMsg_CPU_Name[]			PROGMEM	=	kCPU_NAME;
+#else
+prog_char	gTextMsg_CPU_Name[]			PROGMEM	=	[color=#006699]"UNKNOWN"[/color];
+#endif
+
+
+prog_char	gTextMsg_Explorer[]			PROGMEM	=	[color=#006699]"Arduino explorer"[/color];
+prog_char	gTextMsg_Prompt[]			PROGMEM	=	[color=#006699]"Arduino>"[/color];
+prog_char	gTextMsg_CPU_Type[]			PROGMEM	=	[color=#006699]"CPU Type         = "[/color];
+prog_char	gTextMsg_AVR_ARCH[]			PROGMEM	=	[color=#006699]"__AVR_ARCH__     = "[/color];
+
+prog_char	gTextMsg_AVR_LIBC[]			PROGMEM	=	[color=#006699]"AVR LibC Version = "[/color];
+prog_char	gTextMsg_AVR_LIBC_VER_STR[]	PROGMEM	=	__AVR_LIBC_VERSION_STRING__;
+
+prog_char	gTextMsg_DIGITALPIN[]		PROGMEM	=	[color=#006699]"Digital Pin # "[/color];
+prog_char	gTextMsg_ANALOGPIN[]		PROGMEM	=	[color=#006699]"Analog Pin # "[/color];
+prog_char	gTextMsg_SPACE[]			PROGMEM	=	[color=#006699]" "[/color];
+
+
+prog_char	gTextMsg_WHAT_PIN[]			PROGMEM	=	[color=#006699]"what pin #:"[/color];
+prog_char	gTextMsg_WHAT_PORT[]		PROGMEM	=	[color=#006699]"what port:"[/color];
+prog_char	gTextMsg_RX_DATA[]			PROGMEM	=	[color=#006699]"RX Data"[/color];
+prog_char	gTextMsg_TX_DATA[]			PROGMEM	=	[color=#006699]"TX Data"[/color];
+prog_char	gTextMsg_AnalogIN[]			PROGMEM	=	[color=#006699]"Analog Input "[/color];
+prog_char	gTextMsg_ON_BOARD_LED[]		PROGMEM	=	[color=#006699]"On board LED"[/color];
+
+prog_char	gTextMsg_I2C_SCAN[]			PROGMEM	=	[color=#006699]"starting scanning of I2C bus from "[/color];
+prog_char	gTextMsg_I2C_DevCnt[]		PROGMEM	=	[color=#006699]"I2C device count = "[/color];
+prog_char	gTextMsg_BlinkLEDpin[]		PROGMEM	=	[color=#006699]"LED should be blinking "[/color];
+prog_char	gTextMsg_PortNotSupported[]	PROGMEM	=	[color=#006699]"Port not supported"[/color];
+prog_char	gTextMsg_MustBeLetter[]		PROGMEM	=	[color=#006699]"Must be a letter"[/color];
+prog_char	gTextMsg_MORE[]				PROGMEM	=	[color=#006699]"--MORE--"[/color];
+prog_char	gTextMsg_Available_RAM[]	PROGMEM	=	[color=#006699]"available RAM="[/color];
+prog_char	gTextMsg_size_of[]			PROGMEM	=	[color=#006699]"size of "[/color];
+
+
+
+
+	prog_char	gTextMsg_HELP_MSG_0[]	PROGMEM	=	[color=#006699]"0=Zero address counters"[/color];
+	prog_char	gTextMsg_HELP_MSG_QM[]	PROGMEM	=	[color=#006699]"?=CPU stats"[/color];
+	prog_char	gTextMsg_HELP_MSG_B[]	PROGMEM	=	[color=#006699]"B=Blink LED"[/color];
+#ifdef _SUPPORT_RTC_
+	prog_char	gTextMsg_HELP_MSG_C[]	PROGMEM	=	[color=#006699]"C=Clock Functions"[/color];
+#endif
+#ifdef _SUPPORT_SD_CARD_
+	prog_char	gTextMsg_HELP_MSG_D[]	PROGMEM	=	[color=#006699]"D=Show 1st sector of SD card"[/color];
+#endif
+	prog_char	gTextMsg_HELP_MSG_E[]	PROGMEM	=	[color=#006699]"E=Dump EEPROM"[/color];
+	prog_char	gTextMsg_HELP_MSG_F[]	PROGMEM	=	[color=#006699]"F=Dump FLASH"[/color];
+	prog_char	gTextMsg_HELP_MSG_H[]	PROGMEM	=	[color=#006699]"H=Help"[/color];
+	prog_char	gTextMsg_HELP_MSG_I[]	PROGMEM	=	[color=#006699]"I=I2C scan"[/color];
+	prog_char	gTextMsg_HELP_MSG_M[]	PROGMEM	=	[color=#006699]"M=Map I/O pin assignments"[/color];
+	prog_char	gTextMsg_HELP_MSG_P[]	PROGMEM	=	[color=#006699]"P=Show one digital pin"[/color];
+	prog_char	gTextMsg_HELP_MSG_R[]	PROGMEM	=	[color=#006699]"R=Dump RAM"[/color];
+	prog_char	gTextMsg_HELP_MSG_S[]	PROGMEM	=	[color=#006699]"S=Show pins"[/color];
+	prog_char	gTextMsg_HELP_MSG_T[]	PROGMEM	=	[color=#006699]"T=Play Tone"[/color];
+	prog_char	gTextMsg_HELP_MSG_V[]	PROGMEM	=	[color=#006699]"V=show interrupt Vectors"[/color];
+	prog_char	gTextMsg_HELP_MSG_W[]	PROGMEM	=	[color=#006699]"W=Watch for change on all pins"[/color];
+	prog_char	gTextMsg_HELP_MSG_X[]	PROGMEM	=	[color=#006699]"X=Port blink"[/color];
+
+
+
+
+[color=#7E7E7E]//*	this gets filled with an array from o -> 256 just to prove that we are looking[/color]
+[color=#7E7E7E]//*	at RAM[/color]
+[color=#CC6600]unsigned[/color] [color=#CC6600]char[/color]	gCharArray[256];
+[color=#CC6600]int[/color]				gButtonState[kDigitalPin_Count + 1];
+
+[color=#7E7E7E]//************************************************************************[/color]
+[color=#CC6600]void[/color]	PrintFromPROGMEM([color=#CC6600]void[/color] *dataPtr, [color=#CC6600]byte[/color] offset=0)
+{
+[color=#CC6600]char[/color]	myMessage[64];
+
+	strcpy_P(myMessage, ([color=#CC6600]char[/color] *)dataPtr);
+	[color=#CC6600]if[/color] (offset > 0)
+	{
+		strcpy(myMessage, &myMessage[offset]);
+	}
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color](myMessage);
+}
+
+[color=#7E7E7E]//************************************************************************[/color]
+[color=#CC6600]void[/color]	PrintFromPROGMEMln([color=#CC6600]void[/color] *dataPtr, [color=#CC6600]byte[/color] offset=0)
+{
+	PrintFromPROGMEM(dataPtr, offset);
+	
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]();
+}
+
+
+#pragma mark -
+#pragma mark Memory Functions
+
+[color=#7E7E7E]//************************************************************************[/color]
+[color=#CC6600]int[/color]		Get_free_memory()
+{
+extern [color=#CC6600]char[/color]	__bss_end;
+extern [color=#CC6600]char[/color]	*__brkval;
+[color=#CC6600]int[/color] free_memory;
+
+	[color=#CC6600]if[/color] (([color=#CC6600]int[/color])__brkval == 0)
+	{
+		free_memory	=	(([color=#CC6600]int[/color])&free_memory) - (([color=#CC6600]int[/color])&__bss_end);
+	}
+	[color=#CC6600]else[/color]
+	{
+		free_memory	=	(([color=#CC6600]int[/color])&free_memory) - (([color=#CC6600]int[/color])__brkval);
+	}
+	
+	[color=#CC6600]return[/color] (free_memory);
+}
+
+[color=#7E7E7E]//************************************************************************[/color]
+[color=#7E7E7E]//*	http://www.nongnu.org/avr-libc/user-manual/malloc.html[/color]
+[color=#7E7E7E]//*	thanks to John O for the pointer to this info and the insperation to do it[/color]
+[color=#CC6600]void[/color]	Ram_TableDisplay([color=#CC6600]void[/color]) 
+{
+[color=#CC6600]char[/color] stack = 1;
+extern [color=#CC6600]char[/color] *__data_start;
+extern [color=#CC6600]char[/color] *__data_end;
+
+extern [color=#CC6600]char[/color] *__bss_start;
+extern [color=#CC6600]char[/color] *__bss_end;
+[color=#7E7E7E]//extern char *__brkval;[/color]
+extern [color=#CC6600]char[/color] *__heap_start;
+extern [color=#CC6600]char[/color] *__heap_end;
+[color=#7E7E7E]//extern char *__malloc_heap_end;[/color]
+extern size_t __malloc_margin;
+
+
+	[color=#CC6600]int[/color]	data_size	=	([color=#CC6600]int[/color])&__data_end - ([color=#CC6600]int[/color])&__data_start;
+	[color=#CC6600]int[/color]	bss_size	=	([color=#CC6600]int[/color])&__bss_end - ([color=#CC6600]int[/color])&__data_end;
+	[color=#CC6600]int[/color]	heap_end	=	([color=#CC6600]int[/color])&stack - ([color=#CC6600]int[/color])&__malloc_margin;
+[color=#7E7E7E]//	int	heap_size	=	(int)__brkval - (int)&__bss_end;[/color]
+	[color=#CC6600]int[/color]	heap_size	=	heap_end - ([color=#CC6600]int[/color])&__bss_end;
+	[color=#CC6600]int[/color]	stack_size	=	RAMEND - ([color=#CC6600]int[/color])&stack + 1;
+	[color=#CC6600]int[/color]	[color=#CC6600]available[/color]	=	(RAMEND - ([color=#CC6600]int[/color])&__data_start + 1);
+	
+	[color=#CC6600]available[/color]	-=	data_size + bss_size + heap_size + stack_size;
+
+#if (RAMEND > 4000)
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"+----------------+  __data_start  ="[/color]);	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color](([color=#CC6600]int[/color])&__data_start);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"+      data      +"[/color]);						[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]();
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"+    variables   +  data_size     ="[/color]);	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color](data_size);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"+                +"[/color]);						[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]();
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"+----------------+  __data_end    ="[/color]);	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color](([color=#CC6600]int[/color])&__data_end);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"+----------------+  __bss_start   ="[/color]);	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color](([color=#CC6600]int[/color])&__bss_start);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"+       bss      +"[/color]);						[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]();
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"+    variables   +  bss_size      ="[/color]);	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color](bss_size);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"+                +"[/color]);						[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]();
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"+----------------+  __bss_end     ="[/color]);	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color](([color=#CC6600]int[/color])&__bss_end);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"+----------------+  __heap_start  ="[/color]);	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color](([color=#CC6600]int[/color])&__heap_start);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"+                +"[/color]);						[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]();
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"+       heap     +  heap_size     ="[/color]);	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color](heap_size);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"+                +"[/color]);						[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]();
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"+----------------+  heap_end      ="[/color]);	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color](heap_end);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"+----------------+  Current STACK ="[/color]);	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color](([color=#CC6600]int[/color])&stack);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"+                +"[/color]);						[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]();
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"+      stack     +  stack_size    ="[/color]);	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color](stack_size);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"+                +"[/color]);						[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]();
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"+----------------+  RAMEND        ="[/color]);	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color](RAMEND);
+#endif
+
+[color=#7E7E7E]//	Serial.print("__brkval      =");[/color]
+[color=#7E7E7E]//	Serial.println((int)__brkval);[/color]
+
+	PrintFromPROGMEM(gTextMsg_Available_RAM);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]([color=#CC6600]available[/color]);
+
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]();
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]();
+}
+
+
+#pragma mark -
+
+
+[color=#7E7E7E]//************************************************************************[/color]
+[color=#CC6600]void[/color]	PrintCPUstats()
+{
+[color=#CC6600]char[/color]			textString[32];
+[color=#CC6600]unsigned[/color] [color=#CC6600]long[/color]	memorySize;
+
+	PrintFromPROGMEM(gTextMsg_CPU_Type);
+	PrintFromPROGMEMln(gTextMsg_CPU_Name);
+
+
+	PrintFromPROGMEM(gTextMsg_AVR_ARCH);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color](__AVR_ARCH__);
+	
+	[color=#7E7E7E]//*	these can be found in avr/version.h[/color]
+	PrintFromPROGMEM(gTextMsg_AVR_LIBC);
+	PrintFromPROGMEMln(gTextMsg_AVR_LIBC_VER_STR);
+
+#ifdef SIGNATURE_0
+	[color=#7E7E7E]//*	these can be found in avr/iomxxx.h[/color]
+	sprintf(textString, [color=#006699]"CPU signature = %02X %02X %02X"[/color], SIGNATURE_0, SIGNATURE_1, SIGNATURE_2);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color](textString);
+#endif
+
+
+#ifdef RAMEND
+	[color=#7E7E7E]//*	these can be found in avr/iomxxx.h[/color]
+	memorySize	=	RAMEND - RAMSTART + 1;
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"RAM size      = "[/color]);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color](memorySize / 1024);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]([color=#006699]" K"[/color]);
+#endif
+
+
+#ifdef FLASHEND
+	memorySize	=	([color=#CC6600]long[/color])FLASHEND;
+	memorySize	+=	1;
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"FLASH size    = "[/color]);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color](memorySize / 1024);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]([color=#006699]" K"[/color]);
+#endif
+
+#ifdef E2END
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"EEPROM size   = "[/color]);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color](E2END + 1);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]([color=#006699]" bytes"[/color]);
+#endif
+
+
+	PrintFromPROGMEM(gTextMsg_size_of);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"char  = "[/color]);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color](sizeof([color=#CC6600]char[/color]));
+	
+	PrintFromPROGMEM(gTextMsg_size_of);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"int   = "[/color]);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color](sizeof([color=#CC6600]int[/color]));
+	
+	PrintFromPROGMEM(gTextMsg_size_of);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"long  = "[/color]);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color](sizeof([color=#CC6600]long[/color]));
+
+	PrintFromPROGMEM(gTextMsg_size_of);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"float = "[/color]);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color](sizeof([color=#CC6600]float[/color]));
+	
+	PrintFromPROGMEM(gTextMsg_size_of);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"double= "[/color]);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color](sizeof([color=#CC6600]double[/color]));
+	
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]();
+	
+	Ram_TableDisplay();
+}
+
+
+[color=#7E7E7E]//************************************************************************[/color]
+[color=#CC6600]static[/color] [color=#CC6600]void[/color]	DumpHex([color=#CC6600]byte[/color] dumpWhat, [color=#CC6600]unsigned[/color] [color=#CC6600]long[/color] startAddress, [color=#CC6600]int[/color] numRows)
+{
+[color=#CC6600]int[/color]				ii;
+[color=#CC6600]int[/color]				theValue;
+[color=#CC6600]int[/color]				lineCount;
+[color=#CC6600]char[/color]			textString[16];
+[color=#CC6600]char[/color]			asciiDump[24];
+[color=#CC6600]unsigned[/color] [color=#CC6600]long[/color]	myAddressPointer;
+
+	lineCount			=	0;
+	myAddressPointer	=	startAddress;
+	[color=#CC6600]while[/color] (lineCount < numRows)
+	{
+		sprintf(textString, [color=#006699]"%04X - "[/color], myAddressPointer);
+		[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color](textString);
+		
+		asciiDump[0]		=	0;
+		[color=#CC6600]for[/color] (ii=0; ii<16; ii++)
+		{
+			[color=#CC6600]switch[/color](dumpWhat)
+			{
+				[color=#CC6600]case[/color] kDUMP_FLASH:
+					theValue	=	pgm_read_byte_near(myAddressPointer);
+					[color=#CC6600]break[/color];
+
+				[color=#CC6600]case[/color] kDUMP_EEPROM:
+				#ifndef __MWERKS__
+					theValue	=	[color=#CC6600]EEPROM[/color].[color=#CC6600]read[/color](myAddressPointer);
+				#endif
+					[color=#CC6600]break[/color];
+
+				[color=#CC6600]case[/color] kDUMP_RAM:
+					theValue	=	gRamPtr[myAddressPointer];
+					[color=#CC6600]break[/color];
+
+			}
+
+			sprintf(textString, [color=#006699]"%02X "[/color], theValue);
+			[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color](textString);
+			[color=#CC6600]if[/color] ((theValue >= 0x20) && (theValue < 0x7f))
+			{
+				asciiDump[ii % 16]	=	theValue;
+			}
+			[color=#CC6600]else[/color]
+			{
+				asciiDump[ii % 16]	=	[color=#006699]'.'[/color];
+			}
+			
+			myAddressPointer++;
+		}
+		asciiDump[16]	=	0;
+		[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color](asciiDump);
+	
+		lineCount++;
+	}
+}
+
+
+[color=#7E7E7E]//*******************************************************************[/color]
+[color=#CC6600]void[/color] ShowPins([color=#CC6600]void[/color])
+{
+[color=#CC6600]short[/color]	ii;
+[color=#CC6600]int[/color]		pinValue;
+
+	[color=#CC6600]for[/color] (ii = kDigitalPin_First; ii < kDigitalPin_Count; ii++)
+	{
+		PrintFromPROGMEM(gTextMsg_DIGITALPIN);
+		[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color](ii);
+		PrintFromPROGMEM(gTextMsg_SPACE);
+		pinValue	=	[color=#CC6600]digitalRead[/color](ii);
+		[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color](pinValue);
+		[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"  "[/color]);
+
+		[color=#CC6600]if[/color] (ii == kRXD_pin)
+		{
+			PrintFromPROGMEM(gTextMsg_RX_DATA);
+		}
+		[color=#CC6600]if[/color] (ii == kTXD_pin)
+		{
+			PrintFromPROGMEM(gTextMsg_TX_DATA);
+		}
+
+		[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]();
+	}
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]();
+
+
+#ifdef kAnalogPin_Count
+	[color=#CC6600]for[/color] (ii = 0; ii < kAnalogPin_Count; ii++)
+	{
+		pinValue	=	[color=#CC6600]analogRead[/color](ii);
+		PrintFromPROGMEM(gTextMsg_ANALOGPIN);
+		[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color](ii);
+		PrintFromPROGMEM(gTextMsg_SPACE);
+		[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color](pinValue);
+		[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]();
+	}
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]();
+#else
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]([color=#006699]"No analog pins defined"[/color]);
+#endif
+}
+
+[color=#7E7E7E]//*******************************************************************[/color]
+[color=#CC6600]void[/color] PrintHelp([color=#CC6600]void[/color])
+{
+	PrintFromPROGMEMln(gTextMsg_HELP_MSG_0);
+	PrintFromPROGMEMln(gTextMsg_HELP_MSG_QM);
+	PrintFromPROGMEMln(gTextMsg_HELP_MSG_B);
+#ifdef _SUPPORT_RTC_
+	PrintFromPROGMEMln(gTextMsg_HELP_MSG_C);
+#endif
+#ifdef _SUPPORT_SD_CARD_
+	PrintFromPROGMEMln(gTextMsg_HELP_MSG_D);
+#endif
+	PrintFromPROGMEMln(gTextMsg_HELP_MSG_E);
+	PrintFromPROGMEMln(gTextMsg_HELP_MSG_F);
+	PrintFromPROGMEMln(gTextMsg_HELP_MSG_H);
+	PrintFromPROGMEMln(gTextMsg_HELP_MSG_I);
+	PrintFromPROGMEMln(gTextMsg_HELP_MSG_M);
+	PrintFromPROGMEMln(gTextMsg_HELP_MSG_P);
+	PrintFromPROGMEMln(gTextMsg_HELP_MSG_R);
+	PrintFromPROGMEMln(gTextMsg_HELP_MSG_S);
+	PrintFromPROGMEMln(gTextMsg_HELP_MSG_T);
+	PrintFromPROGMEMln(gTextMsg_HELP_MSG_V);
+	PrintFromPROGMEMln(gTextMsg_HELP_MSG_W);
+	PrintFromPROGMEMln(gTextMsg_HELP_MSG_X);
+}
+
+
+
+[color=#7E7E7E]//****************************************************************************[/color]
+[color=#7E7E7E]//*	Scan the I2C bus between addresses from_addr and to_addr.[/color]
+[color=#7E7E7E]//*	On each address, call the callback function with the address and result.[/color]
+[color=#7E7E7E]//*	If result==0, address was found, otherwise, address wasn't found[/color]
+[color=#7E7E7E]//*	(can use result to potentially get other status on the I2C bus, see twi.c)[/color]
+[color=#7E7E7E]//*	Assumes Wire.begin() has already been called[/color]
+[color=#7E7E7E]//*	2009, Tod E. Kurt, http://todbot.com/blog/[/color]
+[color=#7E7E7E]//****************************************************************************[/color]
+[color=#CC6600]void[/color] ScanI2CBus([color=#CC6600]byte[/color] from_addr, [color=#CC6600]byte[/color] to_addr) 
+{
+#if defined(__AVR_ATmega645__)
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"This CPU does not support I2C (TWI) "[/color]);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color](kCPU_NAME);
+#else
+
+[color=#CC6600]byte[/color] addr;
+[color=#CC6600]byte[/color] rc;
+[color=#CC6600]byte[/color] data; [color=#7E7E7E]// not used, just an address to feed to twi_writeTo()[/color]
+[color=#CC6600]int[/color]	foundCount;
+
+	PrintFromPROGMEM(gTextMsg_I2C_SCAN);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color](from_addr, [color=#006699]DEC[/color]);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]" to "[/color]);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color](to_addr, [color=#006699]DEC[/color]);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]([color=#006699]"..."[/color]);
+
+	data		=	0;
+	foundCount	=	0;
+	[color=#CC6600]for[/color](addr = from_addr; addr <= to_addr; addr++ )
+	{
+		[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"addr:"[/color]);
+		[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color](addr,[color=#006699]DEC[/color]);
+[color=#7E7E7E]//*		rc	=	twi_writeTo(addr, &data, 0, 1);[/color]
+		[color=#CC6600]if[/color] (rc == 0)
+		{
+			foundCount++;
+		}
+		[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]( (rc==0) ? [color=#006699]" found!"[/color]:[color=#006699]"       "[/color]);
+		[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]( (addr%4) ? [color=#006699]"\t"[/color]:[color=#006699]"\r\n"[/color]);
+	}
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]();
+
+	PrintFromPROGMEM(gTextMsg_I2C_DevCnt);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color](foundCount);
+#endif
+}
+
+[color=#7E7E7E]//************************************************************************[/color]
+[color=#CC6600]char[/color]	GetChar([color=#CC6600]void[/color])
+{
+[color=#CC6600]char[/color]	theChar;
+
+	[color=#7E7E7E]//*	wait until there is a char[/color]
+	[color=#CC6600]while[/color] (![color=#CC6600][b]Serial[/b][/color].[color=#CC6600]available[/color]())
+	{
+		[color=#7E7E7E]//*	do nothing[/color]
+	}
+	theChar	=	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]read[/color]();
+	theChar	=	toupper(theChar);
+	[color=#CC6600]return[/color](theChar);
+}
+
+[color=#7E7E7E]//************************************************************************[/color]
+[color=#CC6600]void[/color]	GetInputTextString([color=#CC6600]char[/color] *inputTextString, [color=#CC6600]int[/color] maxLen)
+{
+[color=#CC6600]boolean[/color]	keepGoing;
+[color=#CC6600]char[/color]	theChar;
+[color=#CC6600]int[/color]		cc;
+
+	keepGoing	=	[color=#CC6600]true[/color];
+	cc			=	0;
+	[color=#CC6600]while[/color] (keepGoing && (cc < maxLen))
+	{
+		theChar	=	GetChar();
+		[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]write[/color](theChar); [color=#7E7E7E]//* sends input text[/color]
+		[color=#CC6600]if[/color] (theChar == 0x08)	[color=#7E7E7E]//*	backspace[/color]
+		{
+			cc--;
+			[color=#CC6600]if[/color] (cc < 0)
+			{
+				cc	=	0;
+			}
+		}
+		[color=#CC6600]else[/color] [color=#CC6600]if[/color] (theChar >= 0x20)
+		{
+			inputTextString[cc++]	=	theChar;
+		}
+		[color=#CC6600]else[/color]
+		{
+			inputTextString[cc]	=	0;
+			keepGoing			=	[color=#CC6600]false[/color];
+		}
+	}
+}
+
+[color=#7E7E7E]//************************************************************************[/color]
+[color=#CC6600]void[/color]	ShowOneDigitalPin()
+{
+[color=#CC6600]char[/color]	inputTextString[16];
+[color=#CC6600]int[/color]		pinNumber;
+[color=#CC6600]int[/color]		pinValue;
+
+	PrintFromPROGMEM(gTextMsg_WHAT_PIN);
+	GetInputTextString(inputTextString, 8);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]();
+	
+	pinNumber	=	atoi(inputTextString);
+	
+	[color=#CC6600]while[/color] (![color=#CC6600][b]Serial[/b][/color].[color=#CC6600]available[/color]())
+	{
+		pinValue	=	[color=#CC6600]digitalRead[/color](pinNumber);
+		PrintFromPROGMEM(gTextMsg_DIGITALPIN);
+		[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color](pinNumber);
+		PrintFromPROGMEM(gTextMsg_SPACE);
+		[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color](pinValue);
+		[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]write[/color](0x0d);
+	}
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]read[/color]();	[color=#7E7E7E]//*	throw away the char[/color]
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]();
+}
+
+
+[color=#7E7E7E]//************************************************************************[/color]
+[color=#CC6600]void[/color]	SetOneAnalogPin()
+{
+#if defined(kAnalogPin_Count)
+[color=#CC6600]char[/color]	inputTextString[16];
+[color=#CC6600]int[/color]		pinNumber;
+
+	PrintFromPROGMEM(gTextMsg_WHAT_PIN);
+	GetInputTextString(inputTextString, 8);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]();
+	
+	pinNumber	=	atoi(inputTextString);
+	
+	[color=#CC6600]analogWrite[/color](pinNumber, 128);
+	[color=#CC6600]while[/color] (![color=#CC6600][b]Serial[/b][/color].[color=#CC6600]available[/color]())
+	{
+	}
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]read[/color]();	[color=#7E7E7E]//*	throw away the char[/color]
+	[color=#CC6600]analogWrite[/color](pinNumber, 0);
+	[color=#CC6600]digitalWrite[/color](pinNumber, 0);
+
+#else
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]([color=#006699]"No analog pins defined"[/color]);
+#endif
+}
+
+[color=#CC6600]int[/color]	gPageLineCount	=	0;
+
+[color=#7E7E7E]//************************************************************************[/color]
+[color=#CC6600]boolean[/color]	PrintNewLine_MORE([color=#CC6600]void[/color])
+{
+[color=#CC6600]char[/color]	theChar;
+[color=#CC6600]boolean[/color]	keepGoing;
+
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]();
+	gPageLineCount++;
+	keepGoing	=	[color=#CC6600]true[/color];
+	
+	[color=#CC6600]if[/color] (gPageLineCount > 25)
+	{
+		PrintFromPROGMEM(gTextMsg_MORE);
+		theChar	=	GetChar();
+		[color=#CC6600]if[/color] ((theChar & 0x5f) == [color=#006699]'Q'[/color])
+		{
+			keepGoing	=	[color=#CC6600]false[/color];
+		}
+		[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]write[/color](0x0d);
+
+		gPageLineCount	=	0;
+	}
+	
+	[color=#CC6600]return[/color](keepGoing);
+}
+
+#ifndef NOT_ON_TIMER
+	#define	NOT_ON_TIMER 0	
+#endif
+
+[color=#7E7E7E]//************************************************************************[/color]
+[color=#CC6600]void[/color] MapPins()
+{
+[color=#CC6600]int[/color]		ii;
+[color=#CC6600]int[/color]		portNum;
+[color=#CC6600]int[/color]		pinMask;
+[color=#CC6600]int[/color]		pinNum;
+[color=#CC6600]int[/color]		timerNum;
+[color=#CC6600]char[/color]	textString[32];
+[color=#CC6600]char[/color]	portLetter;
+[color=#CC6600]boolean[/color]	keepGoing;
+
+	PrintFromPROGMEM(gTextMsg_CPU_Type);
+	PrintFromPROGMEMln(gTextMsg_CPU_Name);
+
+	[color=#CC6600]for[/color] (ii = 0; ii< kDigitalPin_Count; ii++)
+	{
+
+	#if defined(__AVR_ATmega32U4__) || defined(__AVR_AT90USB646__) || defined(__AVR_AT90USB1286__)
+	
+		[color=#7E7E7E]//*	the TEENSY arduino does the pin mapping macros differently[/color]
+		[color=#7E7E7E]//*	so I had to create my own table[/color]
+		portLetter	=	pgm_read_byte_near(gPinToPortNameTable + ii);
+		timerNum	=	0;
+	#else
+		portNum		=	digitalPinToPort(ii);
+		portLetter	=	portNum + 0x40;
+		timerNum	=	digitalPinToTimer(ii);
+	#endif
+
+		pinMask		=	digitalPinToBitMask(ii);
+
+
+
+		[color=#7E7E7E]//*	figure out the pin number from the mask[/color]
+		pinNum	=	0;
+		[color=#CC6600]while[/color] (pinMask != 0)
+		{
+			pinNum++;
+			pinMask	=	pinMask >> 1;
+		}
+		pinNum--;
+
+		sprintf(textString, [color=#006699]"Digital pin %2d = %c %2X  "[/color], ii, portLetter, pinNum);
+		[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color](textString);
+		[color=#CC6600]if[/color] (timerNum != NOT_ON_TIMER)
+		{
+			sprintf(textString, [color=#006699]"Timer %2d "[/color], timerNum);
+			[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color](textString);
+		}
+		[color=#CC6600]if[/color] (ii == kRXD_pin)
+		{
+			PrintFromPROGMEM(gTextMsg_RX_DATA);
+		}
+		[color=#CC6600]if[/color] (ii == kTXD_pin)
+		{
+			PrintFromPROGMEM(gTextMsg_TX_DATA);
+		}
+
+	#if defined(kLED_pin_First) && defined(kLED_pin_Last)
+		[color=#CC6600]if[/color] ((ii >= kLED_pin_First) && (ii <= kLED_pin_Last))
+		{
+			PrintFromPROGMEM(gTextMsg_ON_BOARD_LED);
+		}
+	#endif
+	#ifdef kLED_PIN
+		[color=#CC6600]if[/color] (ii == kLED_PIN)
+		{
+			PrintFromPROGMEM(gTextMsg_ON_BOARD_LED);
+		}
+	#endif
+	
+	
+
+
+	#ifdef kDigitalPin_FirstAnalog
+		[color=#CC6600]if[/color] ((ii >= kDigitalPin_FirstAnalog) && (ii < (kDigitalPin_FirstAnalog + kAnalogPin_Count)))
+		{
+			PrintFromPROGMEM(gTextMsg_AnalogIN);
+			[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color](ii - kDigitalPin_FirstAnalog);
+		}
+	#endif
+		keepGoing	=	PrintNewLine_MORE();
+		[color=#CC6600]if[/color] (keepGoing == [color=#CC6600]false[/color])
+		{
+			[color=#CC6600]break[/color];
+		}
+	}
+}
+
+
+[color=#7E7E7E]//************************************************************************[/color]
+[color=#CC6600]void[/color] PlayTone()
+{
+#if (defined(SPEAKER_PIN1) && defined(SPEAKER_PIN2))
+[color=#CC6600]int[/color]	notes[]		=	{NOTE_D4, NOTE_E4, NOTE_C4, NOTE_C3, NOTE_G3};
+[color=#CC6600]int[/color] durations[]	=	{500, 500, 500, 500, 1000};
+
+
+
+	[color=#CC6600]pinMode[/color](SPEAKER_PIN1, [color=#006699]OUTPUT[/color]);
+	[color=#CC6600]pinMode[/color](SPEAKER_PIN2, [color=#006699]OUTPUT[/color]);
+	[color=#CC6600]digitalWrite[/color](SPEAKER_PIN1, [color=#006699]LOW[/color]);
+	[color=#CC6600]tone[/color](SPEAKER_PIN2, 600, 500);
+	[color=#CC6600]for[/color] ([color=#CC6600]int[/color] thisNote = 0; thisNote < 5; thisNote ++)
+	{
+  		[color=#CC6600]tone[/color](SPEAKER_PIN2, notes[thisNote], durations[thisNote]);
+  		[color=#CC6600]delay[/color](durations[thisNote]);
+	}
+#else
+	SetOneAnalogPin();
+#endif
+
+}
+
+
+[color=#7E7E7E]//************************************************************************[/color]
+[color=#CC6600]void[/color] BlinkLEDbyPin([color=#CC6600]int[/color] pinNumber, [color=#CC6600]long[/color] duration)
+{
+[color=#CC6600]unsigned[/color] [color=#CC6600]long[/color]	startMillisecs;
+
+	PrintFromPROGMEM(gTextMsg_BlinkLEDpin);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color](pinNumber);
+
+	startMillisecs	=	[color=#CC6600]millis[/color]();
+	
+	[color=#CC6600]pinMode[/color](pinNumber, [color=#006699]OUTPUT[/color]);
+	[color=#CC6600]while[/color] (([color=#CC6600]millis[/color]() - startMillisecs) < duration)
+	{
+		[color=#CC6600]digitalWrite[/color](pinNumber, [color=#006699]HIGH[/color]);
+		[color=#CC6600]delay[/color](200);
+		[color=#CC6600]digitalWrite[/color](pinNumber, [color=#006699]LOW[/color]);
+		[color=#CC6600]delay[/color](200);
+	}
+	[color=#CC6600]pinMode[/color](pinNumber, [color=#006699]INPUT[/color]);
+
+}
+
+[color=#7E7E7E]//************************************************************************[/color]
+[color=#CC6600]void[/color] BlinkAllLEDS()
+{
+[color=#CC6600]int[/color]		ii;
+[color=#CC6600]boolean[/color]	keepGoing;
+
+	[color=#CC6600]for[/color] (ii = kDigitalPin_First; ii < kDigitalPin_Count; ii++)
+	{
+		[color=#CC6600]if[/color] ((ii != kRXD_pin) && (ii != kTXD_pin))
+		{
+			[color=#CC6600]pinMode[/color](ii, [color=#006699]OUTPUT[/color]);
+			[color=#CC6600]digitalWrite[/color](ii, [color=#006699]LOW[/color]);
+		}
+	}
+
+	keepGoing	=	[color=#CC6600]true[/color];
+	[color=#CC6600]while[/color] (keepGoing)
+	{
+		[color=#CC6600]for[/color] (ii = kDigitalPin_First; ii < kDigitalPin_Count; ii++)
+		{
+			[color=#CC6600]if[/color] ((ii != kRXD_pin) && (ii != kTXD_pin))
+			{
+				[color=#CC6600]digitalWrite[/color](ii, [color=#006699]HIGH[/color]);
+				[color=#CC6600]delay[/color](75);
+				[color=#CC6600]digitalWrite[/color](ii, [color=#006699]LOW[/color]);
+			}
+		}
+
+		[color=#CC6600]if[/color] ([color=#CC6600][b]Serial[/b][/color].[color=#CC6600]available[/color]())
+		{
+			keepGoing	=	[color=#CC6600]false[/color];
+		}
+	}
+}
+
+[color=#7E7E7E]//************************************************************************[/color]
+[color=#CC6600]void[/color] BlinkLED()
+{
+#if defined(kLED_pin_First) && defined(kLED_pin_Last)
+[color=#CC6600]int[/color]	ii;
+
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]([color=#006699]"Liquidware RGB"[/color]);
+	PrintFromPROGMEM(gTextMsg_BlinkLEDpin);
+
+	[color=#CC6600]for[/color] (ii=kLED_pin_First; ii<=kLED_pin_Last; ii++)
+	{
+		[color=#CC6600]pinMode[/color](ii, [color=#006699]OUTPUT[/color]);
+	}
+
+	[color=#CC6600]while[/color] (![color=#CC6600][b]Serial[/b][/color].[color=#CC6600]available[/color]())
+	{
+		[color=#CC6600]for[/color] (ii=kLED_pin_First; ii<=kLED_pin_Last; ii++)
+		{
+			[color=#CC6600]digitalWrite[/color](ii, [color=#006699]LOW[/color]);
+			[color=#CC6600]delay[/color](200);
+			[color=#CC6600]digitalWrite[/color](ii, [color=#006699]HIGH[/color]);
+			[color=#CC6600]delay[/color](200);
+		}
+		[color=#CC6600]delay[/color](500);
+
+	}
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]read[/color]();	[color=#7E7E7E]//*	throw away the char[/color]
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]();
+
+
+#elif defined(kLED_PIN)
+	PrintFromPROGMEM(gTextMsg_BlinkLEDpin);
+
+	[color=#CC6600]pinMode[/color](kLED_PIN, [color=#006699]OUTPUT[/color]);
+	[color=#CC6600]while[/color] (![color=#CC6600][b]Serial[/b][/color].[color=#CC6600]available[/color]())
+	{
+		[color=#CC6600]digitalWrite[/color](kLED_PIN, [color=#006699]HIGH[/color]);
+		[color=#CC6600]delay[/color](200);
+		[color=#CC6600]digitalWrite[/color](kLED_PIN, [color=#006699]LOW[/color]);
+		[color=#CC6600]delay[/color](200);
+	}
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]read[/color]();	[color=#7E7E7E]//*	throw away the char[/color]
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]();
+	[color=#CC6600]pinMode[/color](kLED_PIN, [color=#006699]INPUT[/color]);
+#else
+
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]([color=#006699]"LED Blink not supported"[/color]);
+#endif
+
+}
+
+
+[color=#7E7E7E]//************************************************************************[/color]
+[color=#CC6600]void[/color]	CheckOneInput([color=#CC6600]int[/color] inputNum)
+{
+[color=#CC6600]int[/color]	inputState;
+
+	inputState	=	[color=#CC6600]digitalRead[/color](inputNum);
+	
+	[color=#CC6600]if[/color] (inputState != gButtonState[inputNum])
+	{
+		PrintFromPROGMEM(gTextMsg_DIGITALPIN);
+		[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color](inputNum);
+		[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]" is now "[/color]);
+		[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color](inputState);
+		[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]();
+		
+		gButtonState[inputNum]	=	inputState;
+	}
+}
+
+
+[color=#7E7E7E]//************************************************************************[/color]
+[color=#7E7E7E]//*	Watch for input changes[/color]
+[color=#CC6600]void[/color]	WatchForInputChange()
+{
+[color=#CC6600]int[/color]	ii;
+#if defined(__AVR_ATmega1280__)
+	[color=#CC6600]int[/color]	buttonPadStatePrev;
+	[color=#CC6600]int[/color]	buttonPadState;
+#endif
+
+	[color=#7E7E7E]//*	set all pins as input[/color]
+	[color=#CC6600]for[/color] (ii = kDigitalPin_First; ii < kDigitalPin_Count; ii++)
+	{
+		[color=#7E7E7E]//*	we dont want to do this on RXD and TXD[/color]
+		[color=#CC6600]if[/color] ((ii != kRXD_pin) && (ii != kTXD_pin))
+		{
+			[color=#CC6600]pinMode[/color](ii, [color=#006699]INPUT[/color]);
+			[color=#CC6600]digitalWrite[/color](ii, [color=#006699]HIGH[/color]);	[color=#7E7E7E]//*	this turns on the pull up resistor[/color]
+		}
+	}
+#if defined(__AVR_ATmega1280__)
+	[color=#7E7E7E]//Initialize Power to the ButtonPad through Arduino MEGA Pins 62 and 63[/color]
+	[color=#CC6600]pinMode[/color](62,[color=#006699]OUTPUT[/color]);
+	[color=#CC6600]pinMode[/color](63,[color=#006699]OUTPUT[/color]);
+	[color=#CC6600]digitalWrite[/color](62,[color=#006699]HIGH[/color]);
+	[color=#CC6600]digitalWrite[/color](63,[color=#006699]LOW[/color]);
+	[color=#CC6600]for[/color] (ii = 64; ii <= 69; ii++)
+	{
+		[color=#CC6600]digitalWrite[/color](ii, [color=#006699]LOW[/color]);	[color=#7E7E7E]//enable internal pulldown[/color]
+	}
+#endif
+
+	[color=#CC6600]while[/color] (![color=#CC6600][b]Serial[/b][/color].[color=#CC6600]available[/color]())
+	{
+		[color=#CC6600]for[/color] (ii = kDigitalPin_First; ii < kDigitalPin_Count; ii++)
+		{
+			[color=#7E7E7E]//*	we dont want to do this on RXD and TXD[/color]
+			[color=#CC6600]if[/color] ((ii != kRXD_pin) && (ii != kTXD_pin))
+			{
+				CheckOneInput(ii);
+			}
+		}
+		
+	#if defined(__AVR_ATmega1280__)
+		buttonPadState	=	CButtonPad.readButtons();
+		[color=#CC6600]if[/color] (buttonPadState != buttonPadStatePrev)
+		{
+			buttonPadStatePrev	=	buttonPadState;
+			[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]"buttonpad="[/color]);
+			[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color](buttonPadState, [color=#006699]HEX[/color]);
+		}
+	#endif
+	}
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]read[/color]();	[color=#7E7E7E]//*	throw away the char[/color]
+}
+
+#pragma mark -
+#pragma mark Duino644 routines
+
+#if defined(_SUPPORT_RTC_)
+[color=#7E7E7E]//*********************************************************************************************************[/color]
+[color=#CC6600]void[/color] GetTimeFromRTC()
+{
+[color=#CC6600]int[/color]		rtc[7];
+[color=#CC6600]int[/color]		[color=#CC6600]second[/color];
+[color=#CC6600]char[/color]	textString[32];
+
+	[color=#CC6600]RTC[/color].[color=#CC6600]get[/color](rtc, [color=#CC6600]true[/color]);
+
+	[color=#CC6600]second[/color]	=	rtc[0];
+	gMinute	=	rtc[1];
+	gHour	=	rtc[2];
+	gDow	=	rtc[3];
+	gDay	=	rtc[4];
+	gMonth	=	rtc[5];
+	gYear	=	rtc[6];
+
+	sprintf(textString, [color=#006699]"Time is %02d/%02d/%02d %02d:%02d:%02d"[/color],	gMonth,
+																	gDay,
+																	gYear,
+																	gHour,
+																	gMinute,
+																	[color=#CC6600]second[/color]
+																	);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color](textString);
+}
+
+[color=#7E7E7E]//*********************************************************************************************************[/color]
+[color=#CC6600]void[/color] ClockFunctions()
+{
+	GetTimeFromRTC();
+}
+
+#endif
+
+#pragma mark -
+#pragma mark AVR routines
+
+
+[color=#7E7E7E]//************************************************************************[/color]
+[color=#CC6600]void[/color]	AVR_PortOutput([color=#CC6600]void[/color])
+{
+[color=#CC6600]char[/color]				inputTextString[16];
+[color=#CC6600]int[/color]					portLetter;
+
+	PrintFromPROGMEM(gTextMsg_WHAT_PORT);
+	GetInputTextString(inputTextString, 8);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]();
+	
+	portLetter	=	inputTextString[0];
+
+	[color=#CC6600]if[/color] ((portLetter >= [color=#006699]'A'[/color]) && (portLetter <= [color=#006699]'Z'[/color]))
+	{
+		[color=#CC6600]switch[/color](portLetter)
+		{
+		#ifdef DDRA
+			[color=#CC6600]case[/color] [color=#006699]'A'[/color]:
+				DDRA	=	0xff;
+				[color=#CC6600]while[/color] (![color=#CC6600][b]Serial[/b][/color].[color=#CC6600]available[/color]())
+				{
+					PORTA	^=	0xff;
+					[color=#CC6600]delay[/color](200);
+				}
+				PORTA	=	0;
+				[color=#CC6600]break[/color];
+		#endif
+
+			[color=#CC6600]case[/color] [color=#006699]'B'[/color]:
+				DDRB	=	0xff;
+				[color=#CC6600]while[/color] (![color=#CC6600][b]Serial[/b][/color].[color=#CC6600]available[/color]())
+				{
+					PORTB	^=	0xff;
+					[color=#CC6600]delay[/color](200);
+				}
+				PORTB	=	0;
+				[color=#CC6600]break[/color];
+
+
+			[color=#CC6600]case[/color] [color=#006699]'C'[/color]:
+				DDRC	=	0xff;
+				[color=#CC6600]while[/color] (![color=#CC6600][b]Serial[/b][/color].[color=#CC6600]available[/color]())
+				{
+					PORTC	^=	0xff;
+					[color=#CC6600]delay[/color](200);
+				}
+				PORTC	=	0;
+				[color=#CC6600]break[/color];
+
+			[color=#CC6600]case[/color] [color=#006699]'D'[/color]:
+				DDRD	=	0xff;
+				[color=#CC6600]while[/color] (![color=#CC6600][b]Serial[/b][/color].[color=#CC6600]available[/color]())
+				{
+					PORTD	^=	0xff;
+					[color=#CC6600]delay[/color](200);
+				}
+				PORTD	=	0;
+				[color=#CC6600]break[/color];
+
+		#ifdef DDRE
+			[color=#CC6600]case[/color] [color=#006699]'E'[/color]:
+				DDRE	=	0xff;
+				[color=#CC6600]while[/color] (![color=#CC6600][b]Serial[/b][/color].[color=#CC6600]available[/color]())
+				{
+					PORTE	^=	0xff;
+					[color=#CC6600]delay[/color](200);
+				}
+				PORTE	=	0;
+				[color=#CC6600]break[/color];
+		#endif
+
+		#ifdef DDRF
+			[color=#CC6600]case[/color] [color=#006699]'F'[/color]:
+				DDRF	=	0xff;
+				[color=#CC6600]while[/color] (![color=#CC6600][b]Serial[/b][/color].[color=#CC6600]available[/color]())
+				{
+					PORTF	^=	0xff;
+					[color=#CC6600]delay[/color](200);
+				}
+				PORTF	=	0;
+				[color=#CC6600]break[/color];
+		#endif
+
+		#ifdef DDRG
+			[color=#CC6600]case[/color] [color=#006699]'G'[/color]:
+				DDRG	=	0xff;
+				[color=#CC6600]while[/color] (![color=#CC6600][b]Serial[/b][/color].[color=#CC6600]available[/color]())
+				{
+					PORTG	^=	0xff;
+					[color=#CC6600]delay[/color](200);
+				}
+				PORTG	=	0;
+				[color=#CC6600]break[/color];
+		#endif
+
+		#ifdef DDRH
+			[color=#CC6600]case[/color] [color=#006699]'H'[/color]:
+				DDRH	=	0xff;
+				[color=#CC6600]while[/color] (![color=#CC6600][b]Serial[/b][/color].[color=#CC6600]available[/color]())
+				{
+					PORTH	^=	0xff;
+					[color=#CC6600]delay[/color](200);
+				}
+				PORTH	=	0;
+				[color=#CC6600]break[/color];
+		#endif
+
+		#ifdef DDRI
+			[color=#CC6600]case[/color] [color=#006699]'I'[/color]:
+				DDRI	=	0xff;
+				[color=#CC6600]while[/color] (![color=#CC6600][b]Serial[/b][/color].[color=#CC6600]available[/color]())
+				{
+					PORTI	^=	0xff;
+					[color=#CC6600]delay[/color](200);
+				}
+				PORTI	=	0;
+				[color=#CC6600]break[/color];
+		#endif
+
+		#ifdef DDRJ
+			[color=#CC6600]case[/color] [color=#006699]'J'[/color]:
+				DDRJ	=	0xff;
+				[color=#CC6600]while[/color] (![color=#CC6600][b]Serial[/b][/color].[color=#CC6600]available[/color]())
+				{
+					PORTJ	^=	0xff;
+					[color=#CC6600]delay[/color](200);
+				}
+				PORTJ	=	0;
+				[color=#CC6600]break[/color];
+		#endif
+
+		#ifdef DDRK
+			[color=#CC6600]case[/color] [color=#006699]'K'[/color]:
+				DDRK	=	0xff;
+				[color=#CC6600]while[/color] (![color=#CC6600][b]Serial[/b][/color].[color=#CC6600]available[/color]())
+				{
+					PORTK	^=	0xff;
+					[color=#CC6600]delay[/color](200);
+				}
+				PORTK	=	0;
+				[color=#CC6600]break[/color];
+		#endif
+
+		#ifdef DDRL
+			[color=#CC6600]case[/color] [color=#006699]'L'[/color]:
+				DDRL	=	0xff;
+				[color=#CC6600]while[/color] (![color=#CC6600][b]Serial[/b][/color].[color=#CC6600]available[/color]())
+				{
+					PORTL	^=	0xff;
+					[color=#CC6600]delay[/color](200);
+				}
+				PORTL	=	0;
+				[color=#CC6600]break[/color];
+		#endif
+
+
+
+			[color=#CC6600]default[/color]:
+				PrintFromPROGMEMln(gTextMsg_PortNotSupported);
+				[color=#CC6600]break[/color];
+				
+		}
+	}
+	[color=#CC6600]else[/color]
+	{
+		PrintFromPROGMEMln(gTextMsg_MustBeLetter);
+	}
+}
+
+[color=#7E7E7E]//************************************************************************[/color]
+[color=#CC6600]void[/color]	VectorDisplay([color=#CC6600]void[/color])
+{
+[color=#CC6600]unsigned[/color] [color=#CC6600]int[/color]	byte1;
+[color=#CC6600]unsigned[/color] [color=#CC6600]int[/color]	byte2;
+[color=#CC6600]unsigned[/color] [color=#CC6600]int[/color]	byte3;
+[color=#CC6600]unsigned[/color] [color=#CC6600]int[/color]	byte4;
+
+[color=#CC6600]unsigned[/color] [color=#CC6600]int[/color]	word1;
+[color=#CC6600]unsigned[/color] [color=#CC6600]int[/color]	word2;
+[color=#CC6600]int[/color]				vectorIndex;
+[color=#CC6600]char[/color]			textString[48];
+[color=#CC6600]unsigned[/color] [color=#CC6600]long[/color]	myMemoryPtr;
+[color=#CC6600]unsigned[/color] [color=#CC6600]long[/color]	wordMemoryAddress;
+[color=#CC6600]unsigned[/color] [color=#CC6600]int[/color]	realitiveAddr;
+[color=#CC6600]unsigned[/color] [color=#CC6600]long[/color]	myFullAddress;
+[color=#CC6600]boolean[/color]			keepGoing;
+
+[color=#7E7E7E]//unsigned int	absoluteAddr;[/color]
+
+	myMemoryPtr		=	0;
+	vectorIndex		=	0;
+	PrintFromPROGMEMln(gTextMsg_CPU_Name);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color](		[color=#006699]"V#   ADDR   Vector      inst        Interrupt"[/color]);
+	[color=#7E7E7E]//					 V#   ADDR   Vector[/color]
+	[color=#7E7E7E]//					  1 - 0000 = C2 08 00 00 rjmp 0208   RESET[/color]
+	[color=#CC6600]while[/color] (vectorIndex < kInterruptVectorCount)
+	{
+		wordMemoryAddress	=	myMemoryPtr / 2;
+		[color=#7E7E7E]//					 01 - 0000 = 12 34[/color]
+		sprintf(textString, [color=#006699]"%2d - %04X = "[/color], (vectorIndex + 1), wordMemoryAddress);
+		[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color](textString);
+		
+		
+		[color=#7E7E7E]//*	the AVR is LITTLE ENDIAN, sqp the byte order[/color]
+		byte1	=	pgm_read_byte_near(myMemoryPtr++);
+		byte2	=	pgm_read_byte_near(myMemoryPtr++);
+		word1	=	(byte2 << 8) + byte1;
+
+		byte3	=	pgm_read_byte_near(myMemoryPtr++);
+		byte4	=	pgm_read_byte_near(myMemoryPtr++);
+		word2	=	(byte4 << 8) + byte3;
+
+
+
+		sprintf(textString, [color=#006699]"%02X %02X %02X %02X "[/color], byte2, byte1, byte4, byte3);
+		[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color](textString);
+
+		[color=#CC6600]if[/color] ((word1 & 0xc000) == 0xc000)
+		{
+			[color=#7E7E7E]//*	rjmp instruction[/color]
+			realitiveAddr	=	word1 & 0x3FFF;
+	[color=#7E7E7E]//		absoluteAddr	=	realitiveAddr + myMemoryPtr;[/color]
+			sprintf(textString, [color=#006699]"rjmp %04X "[/color], realitiveAddr);
+			
+		}
+		[color=#CC6600]else[/color] [color=#CC6600]if[/color] ((word1 & 0xfE0E) == 0x940c)
+		{
+			[color=#7E7E7E]//*	jmp instruction, this is REALLY complicated, refer to the JMP instruction manual[/color]
+			myFullAddress	=	((byte1 & 0x01) << 21) +
+								((byte2 & 0xc0) << 17) +
+								((byte2 & 0x01) << 16) +
+								word2;
+								
+			sprintf(textString, [color=#006699]"jmp  %06X "[/color], myFullAddress);
+		}
+		[color=#CC6600]while[/color] (strlen(textString) < 12)
+		{
+			strcat(textString, [color=#006699]" "[/color]);	
+		}
+		
+		[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color](textString);
+
+	#if defined(_INTERRUPT_NAMES_DEFINED_)
+		strcpy_P(textString, ([color=#CC6600]char[/color]*)pgm_read_word(&(gInterruptNameTable[vectorIndex])));
+		[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color](textString);
+	#endif
+	
+		keepGoing	=	PrintNewLine_MORE();
+		[color=#CC6600]if[/color] (keepGoing == [color=#CC6600]false[/color])
+		{
+			[color=#CC6600]break[/color];
+		}
+
+		vectorIndex++;
+	}
+}
+
+#pragma mark -
+
+#ifdef _SUPPORT_SD_CARD_
+[color=#7E7E7E]//************************************************************************[/color]
+[color=#CC6600]void[/color]	ShowSDcardDirectroy()
+{
+[color=#7E7E7E]//#ifdef __AVR_ATmega644__[/color]
+	[color=#CC6600]SD[/color].ls([color=#006699]"quotes.txt"[/color]);
+	[color=#CC6600]SD[/color].[color=#CC6600]readBytes[/color]([color=#006699]"quotes.txt"[/color], 0);
+[color=#7E7E7E]//#endif[/color]
+}
+#endif
+
+#pragma mark -
+
+#if (SERIAL_PORT_COUNT > 1)
+[color=#7E7E7E]//************************************************************************[/color]
+[color=#CC6600]void[/color] QuereySerialPorts()
+{
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]([color=#006699]"Sending out port 1"[/color]);
+	[color=#CC6600][b]Serial1[/b][/color].[color=#CC6600]begin[/color](115200);
+	[color=#CC6600][b]Serial1[/b][/color].[color=#CC6600]println[/color]([color=#006699]"ABCDEFGHIJKLMNOPQRSTU"[/color]);
+	
+}
+#endif
+
+
+[color=#7E7E7E]//************************************************************************[/color]
+[color=#CC6600]void[/color] [color=#CC6600][b]setup[/b][/color]()
+{
+[color=#CC6600]int[/color]	ii;
+
+#if defined(_BOARD_LIQUIDWARE_TOUCH_SLIDE_)
+	[color=#7E7E7E]//*	arduino in reset[/color]
+	[color=#7E7E7E]//*	the Liquidware Touch slide uses the same 2 pins (0,1) for tx,rx.[/color]
+	[color=#7E7E7E]//*	It can put the Arduino in reset and thus take over these 2 pins[/color]
+	SETBIT(ARDUINO_RESET_DDR, ARDUINO_RESET_PNUM);
+	CLRBIT(ARDUINO_RESET_PORT, ARDUINO_RESET_PNUM);
+	[color=#CC6600]delay[/color](100);
+#endif
+
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]begin[/color](9600);
+	
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]();
+
+
+	PrintFromPROGMEM(gTextMsg_Explorer);
+	[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]();
+	PrintFromPROGMEM(gTextMsg_CPU_Type);
+	PrintFromPROGMEMln(gTextMsg_CPU_Name);
+	PrintHelp();
+
+
+
+	[color=#CC6600]for[/color] (ii = kDigitalPin_First; ii < kDigitalPin_Count; ii++)
+	{
+		[color=#CC6600]if[/color] ((ii != kRXD_pin) && (ii != kTXD_pin))
+		{
+			[color=#CC6600]pinMode[/color](ii, [color=#006699]INPUT[/color]);
+			[color=#CC6600]digitalWrite[/color](ii, [color=#006699]HIGH[/color]);	[color=#7E7E7E]//*	turn on pull up resister[/color]
+		}
+	}
+
+	[color=#7E7E7E]//*	get the current state of the inputs[/color]
+	[color=#CC6600]for[/color] (ii=0; ii < kDigitalPin_Count; ii++)
+	{
+		gButtonState[ii]	=	[color=#CC6600]digitalRead[/color](ii);
+	}
+
+
+	[color=#7E7E7E]//*	put something in RAM so we can verify what we are looking at[/color]
+	[color=#CC6600]for[/color] (ii=0; ii<256; ii++)
+	{
+		gCharArray[ii]	=	ii;
+	}
+
+	gFlashIndex	=	0;
+
+
+	PrintFromPROGMEM(gTextMsg_Prompt);
+
+#if defined(_BOARD_DUINO644_ )
+[color=#7E7E7E]//	RTC.stop();[/color]
+[color=#7E7E7E]//	RTC.set(DS1307_SEC,		0);[/color]
+[color=#7E7E7E]//	RTC.set(DS1307_MIN,		28);[/color]
+[color=#7E7E7E]//	RTC.set(DS1307_HR,		21);[/color]
+[color=#7E7E7E]//	RTC.set(DS1307_DOW,		5);[/color]
+[color=#7E7E7E]//	RTC.set(DS1307_DATE,	15);[/color]
+[color=#7E7E7E]//	RTC.set(DS1307_MTH,		4);[/color]
+[color=#7E7E7E]//	RTC.set(DS1307_YR,		10);[/color]
+[color=#7E7E7E]//	RTC.start();[/color]
+#endif
+
+#if (defined(SPEAKER_PIN1) && defined(SPEAKER_PIN2))
+[color=#7E7E7E]//	#if defined(__AVR_ATmega644__)[/color]
+[color=#7E7E7E]//	PlayTone();[/color]
+#endif
+
+#ifdef kLED_PIN
+	[color=#CC6600]pinMode[/color](kLED_PIN, [color=#006699]OUTPUT[/color]);
+	[color=#CC6600]while[/color] (![color=#CC6600][b]Serial[/b][/color].[color=#CC6600]available[/color]())
+	{
+		[color=#CC6600]digitalWrite[/color](kLED_PIN, [color=#006699]HIGH[/color]);
+		[color=#CC6600]delay[/color](200);
+		[color=#CC6600]digitalWrite[/color](kLED_PIN, [color=#006699]LOW[/color]);
+		[color=#CC6600]delay[/color](200);
+	}
+#endif
+}
+
+
+
+
+[color=#7E7E7E]//************************************************************************[/color]
+[color=#CC6600]void[/color] [color=#CC6600][b]loop[/b][/color]()
+{
+[color=#CC6600]char[/color]	theChar;
+	
+	[color=#CC6600]if[/color] ([color=#CC6600][b]Serial[/b][/color].[color=#CC6600]available[/color]())
+	{
+		theChar	=	GetChar();
+		[color=#CC6600]if[/color] (theChar >= 0x20)
+		{
+			[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color](theChar);
+		}
+		[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]print[/color]([color=#006699]" "[/color]);
+		gPageLineCount	=	0;
+		[color=#CC6600]switch[/color](theChar)
+		{
+			[color=#CC6600]case[/color] [color=#006699]'0'[/color]:
+				gFlashIndex	=	0;
+				gRamIndex	=	0;
+				[color=#CC6600]break[/color];
+			
+			[color=#7E7E7E]//*	1,2,3, 4 are for use with LCDserialShield[/color]
+			[color=#CC6600]case[/color] [color=#006699]'1'[/color]:
+				PrintFromPROGMEMln(gTextMsg_CPU_Name);
+				[color=#CC6600]break[/color];
+
+			[color=#CC6600]case[/color] [color=#006699]'2'[/color]:
+				[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color](__AVR_ARCH__);
+				[color=#CC6600]break[/color];
+
+			[color=#CC6600]case[/color] [color=#006699]'3'[/color]:
+				PrintFromPROGMEMln(gTextMsg_AVR_LIBC_VER_STR);
+				[color=#CC6600]break[/color];
+
+			[color=#CC6600]case[/color] [color=#006699]'?'[/color]:
+				PrintFromPROGMEMln(gTextMsg_HELP_MSG_QM, 2);
+				PrintCPUstats();
+				[color=#CC6600]break[/color];
+			
+			[color=#CC6600]case[/color] [color=#006699]'A'[/color]:
+				BlinkAllLEDS();
+				[color=#CC6600]break[/color];
+			
+			[color=#CC6600]case[/color] [color=#006699]'4'[/color]:
+			[color=#CC6600]case[/color] [color=#006699]'B'[/color]:
+				BlinkLED();
+				[color=#CC6600]break[/color];
+				
+		#if defined(_SUPPORT_RTC_)
+			[color=#CC6600]case[/color] [color=#006699]'C'[/color]:
+				ClockFunctions();
+				[color=#CC6600]break[/color];
+		#endif
+			
+		#ifdef _SUPPORT_SD_CARD_
+			[color=#CC6600]case[/color] [color=#006699]'D'[/color]:
+				PrintFromPROGMEMln(gTextMsg_HELP_MSG_D, 2);
+				ShowSDcardDirectroy();
+				[color=#CC6600]break[/color];
+		#endif
+				
+			[color=#CC6600]case[/color] [color=#006699]'E'[/color]:
+				PrintFromPROGMEMln(gTextMsg_HELP_MSG_E, 2);
+				DumpHex(kDUMP_EEPROM, 0, 32);
+				[color=#CC6600]break[/color];
+			
+			[color=#CC6600]case[/color] [color=#006699]'F'[/color]:
+				PrintFromPROGMEMln(gTextMsg_HELP_MSG_F, 2);
+				DumpHex(kDUMP_FLASH, gFlashIndex, 16);
+				gFlashIndex	+=	256;
+				[color=#CC6600]break[/color];
+			
+			[color=#CC6600]case[/color] [color=#006699]'H'[/color]:
+				PrintFromPROGMEMln(gTextMsg_HELP_MSG_H, 2);
+				PrintHelp();
+				[color=#CC6600]break[/color];
+
+			[color=#CC6600]case[/color] [color=#006699]'I'[/color]:
+				[color=#CC6600]Wire[/color].[color=#CC6600]begin[/color]();
+				ScanI2CBus(1, 127);
+				[color=#CC6600]break[/color];
+			
+			[color=#CC6600]case[/color] [color=#006699]'M'[/color]:
+				PrintFromPROGMEMln(gTextMsg_HELP_MSG_M, 2);
+				MapPins();
+				[color=#CC6600]break[/color];
+				
+			[color=#CC6600]case[/color] [color=#006699]'P'[/color]:
+				PrintFromPROGMEMln(gTextMsg_HELP_MSG_P, 2);
+				ShowOneDigitalPin();
+				[color=#CC6600]break[/color];
+				
+			[color=#CC6600]case[/color] [color=#006699]'R'[/color]:
+				PrintFromPROGMEMln(gTextMsg_HELP_MSG_R, 2);
+				DumpHex(kDUMP_RAM, gRamIndex, 16);
+				gRamIndex	+=	256;
+				[color=#CC6600]break[/color];
+			
+			[color=#CC6600]case[/color] [color=#006699]'S'[/color]:
+				PrintFromPROGMEMln(gTextMsg_HELP_MSG_S, 2);
+				ShowPins();
+				[color=#CC6600]break[/color];
+			
+			[color=#CC6600]case[/color] [color=#006699]'5'[/color]:
+			[color=#CC6600]case[/color] [color=#006699]'T'[/color]:
+				PrintFromPROGMEMln(gTextMsg_HELP_MSG_T, 2);
+				PlayTone();
+				[color=#CC6600]break[/color];
+				
+			[color=#CC6600]case[/color] [color=#006699]'6'[/color]:
+			[color=#CC6600]case[/color] [color=#006699]'W'[/color]:
+				PrintFromPROGMEMln(gTextMsg_HELP_MSG_W, 2);
+				WatchForInputChange();
+				[color=#CC6600]break[/color];
+			
+
+			[color=#CC6600]case[/color] [color=#006699]'V'[/color]:
+				PrintFromPROGMEMln(gTextMsg_HELP_MSG_V, 2);
+				VectorDisplay();
+				[color=#CC6600]break[/color];
+				
+			[color=#CC6600]case[/color] [color=#006699]'X'[/color]:
+				PrintFromPROGMEMln(gTextMsg_HELP_MSG_X, 2);
+				AVR_PortOutput();
+				[color=#CC6600]break[/color];
+				
+			[color=#CC6600]case[/color] [color=#006699]'Z'[/color]:
+				SetOneAnalogPin();
+				[color=#CC6600]break[/color];
+
+		#if (SERIAL_PORT_COUNT > 1)
+			[color=#CC6600]case[/color] [color=#006699]'Q'[/color]:
+				QuereySerialPorts();
+				[color=#CC6600]break[/color];
+		#endif
+		
+			[color=#CC6600]default[/color]:
+				[color=#CC6600][b]Serial[/b][/color].[color=#CC6600]println[/color]([color=#006699]"Huh?"[/color]);
+				[color=#CC6600]break[/color];
+				
+		}
+		PrintFromPROGMEM(gTextMsg_Prompt);
+	}
+}
+
+[/quote]
